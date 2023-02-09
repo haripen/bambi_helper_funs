@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Sun Mar 24 12:19:33 2019
-
-@author: haraldpenasso
-"""
+#
+#Created on Sun Mar 24 12:19:33 2019
+#
+#@author: haraldpenasso
 
 #%% FUNCTIONS TO LOAD
 #%%------------------------------------------------------------------------
 # Test Function
-def testPUBM():
+def hello():
     print('!!! Hello World !!!')
 #--------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
