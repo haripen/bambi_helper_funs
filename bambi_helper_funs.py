@@ -476,7 +476,7 @@ def az_plot_contrast(idat,df,dim,lvl_h0,lvl_h0_dat,lvl_h1,lvl_h1_dat,mode,t2,ref
 def az_bf(idata, key, lvl_h0, lvl_h1, prior_sim=0.5, prior_diff=0.5):
     import xarray as xr
     import numpy as np
-    from scipy.stats import norm
+    from scipy.stats import gaussian_kde #norm
     import pandas as pd
     """
     """
@@ -485,14 +485,23 @@ def az_bf(idata, key, lvl_h0, lvl_h1, prior_sim=0.5, prior_diff=0.5):
     da2 = (idata.posterior.stack(draws=("chain", "draw"))[key]).sel({key+'_dim':lvl_h0})
     
     # Compute the mean and standard deviation of the two input DataArrays
-    mean1, std1 = da1.mean().values, da1.std().values
-    mean2, std2 = da2.mean().values, da2.std().values
+    mean1 = da1.mean().values
+    #std1 = da1.std().values
+    mean2 = da2.mean().values
+    #std2 = da2.std().values
     
     # Compute the likelihood for the similarity hypothesis
-    odds_sim = (norm(mean1, std1).pdf(mean2) * norm(mean2, std2).pdf(mean1))
+    # sd and mean method
+    #odds_sim = (norm(mean1, std1).pdf(mean2) * norm(mean2, std2).pdf(mean1))
+    # KDE methods
+    # sklearn may provides more kernels
+        #from sklearn.neighbors import KernelDensity as kde
+        #np.exp(kde(kernel='epanechnikov',bandwidth=0.005).fit([[i] for i in da1.values]).score_samples([[mean2]]))
+    odds_sim = gaussian_kde(da1).pdf(mean2) * gaussian_kde(da2).pdf(mean1)
     
     # Compute the likelihood for the difference hypothesis
-    odds_diff = (norm(mean1, std1).pdf(mean1) * norm(mean2, std2).pdf(mean2))
+    #odds_diff = (norm(mean1, std1).pdf(mean1) * norm(mean2, std2).pdf(mean2))
+    odds_diff = stats.gaussian_kde(da1).pdf(mean1) * stats.gaussian_kde(da2).pdf(mean2)
     
     # Compute the probability for similarity
     p_sim = (odds_sim * prior_sim) / (odds_sim * prior_sim + odds_diff * prior_diff)
