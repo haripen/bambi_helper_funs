@@ -501,7 +501,7 @@ def az_bf(idata, key, lvl_h0, lvl_h1, prior_sim=0.5, prior_diff=0.5):
     
     # Compute the likelihood for the difference hypothesis
     #odds_diff = (norm(mean1, std1).pdf(mean1) * norm(mean2, std2).pdf(mean2))
-    odds_diff = stats.gaussian_kde(da1).pdf(mean1) * stats.gaussian_kde(da2).pdf(mean2)
+    odds_diff = gaussian_kde(da1).pdf(mean1) * gaussian_kde(da2).pdf(mean2)
     
     # Compute the probability for similarity
     p_sim = (odds_sim * prior_sim) / (odds_sim * prior_sim + odds_diff * prior_diff)
