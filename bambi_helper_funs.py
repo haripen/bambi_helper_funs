@@ -72,206 +72,42 @@ def sns_to_hex(sea_col):
     return '#%02x%02x%02x' % tuple([int(i) for i in (np.array(sea_col)*255).round()])
 # -----------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
-# az_effect_size
+# get_data_for_effect_size
 # -----------------------------------------------------------------------------
 # DESCRIPTION
-def az_effect_size(idata,df,main_key,sub_key=None,sig_diff=0.05):
-    # https://www.statisticshowto.com/hedges-g/
-    # (!) https://www.itl.nist.gov/div898/software/dataplot/refman2/auxillar/hedgeg.htm
-    # https://rowannicholls.github.io/python/statistics/effect_size.html#hedgess-g
-    # https://www.socscistatistics.com/effectsize/default3.aspx
-    # https://rdrr.io/cran/rstatix/src/R/cohens_d.R
-    # main_key ... dict with main_key value pair of test_col:test or main_kez:[level_control, level_treat] without a subkey
-    # sub_key ... dict with main_key value pair of subset_col:[level_control, level_treat]
+def get_data_for_effect_size(idata,df,main_key,sub_key=None):
     
     if sub_key==None:
         print("Effect size of "+list(main_key.keys())[0]+" "+main_key[list(main_key.keys())[0]][1]+" - "+ main_key[list(main_key.keys())[0]][0])
-        c_idx = seli(df,{list(main_key.keys())[0]:main_key[list(main_key.keys())[0]][0]})
-        t_idx = seli(df,{list(main_key.keys())[0]:main_key[list(main_key.keys())[0]][1]})
+        h0_idx = seli(df,{list(main_key.keys())[0]:main_key[list(main_key.keys())[0]][0]})
+        h1_idx = seli(df,{list(main_key.keys())[0]:main_key[list(main_key.keys())[0]][1]})
     else:
         print("Effect size of "+list(main_key.keys())[0]+" "+main_key[list(main_key.keys())[0]]+" contrasting "+list(sub_key.keys())[0]+" "+sub_key[list(sub_key.keys())[0]][1]+" - "+ sub_key[list(sub_key.keys())[0]][0])
-        c_idx = intersecti([seli(df,main_key),seli(df,{list(sub_key.keys())[0]:sub_key[list(sub_key.keys())[0]][0]})])
-        t_idx = intersecti([seli(df,main_key),seli(df,{list(sub_key.keys())[0]:sub_key[list(sub_key.keys())[0]][1]})])
-    c_post = az_isel_scaled_value(idata,c_idx).posterior
-    t_post = az_isel_scaled_value(idata,t_idx).posterior
-    n_c = c_post['scaled_value_sigma'].size
-    n_t = t_post['scaled_value_sigma'].size
-    n = n_t + n_c
-    if f_test(c_post['scaled_value_sigma'],t_post['scaled_value_sigma'])<sig_diff:
-        if sub_key==None:
-            print("Computing corrected Glass's delta, i.e., only SD of "+main_key[list(main_key.keys())[0]][0]+" (should be controls!)")
-        else:
-            print("Computing corrected Glass's delta, i.e., only SD of "+sub_key[list(sub_key.keys())[0]][0]+" (should be controls!)")
-        sd_pooled = c_post['scaled_value_sigma']
+        h0_idx = intersecti([seli(df,main_key),seli(df,{list(sub_key.keys())[0]:sub_key[list(sub_key.keys())[0]][0]})])
+        h1_idx = intersecti([seli(df,main_key),seli(df,{list(sub_key.keys())[0]:sub_key[list(sub_key.keys())[0]][1]})])
+        
+    h0_dat = az_isel_scaled_value(idata,h0_idx).posterior
+    h1_dat = az_isel_scaled_value(idata,h1_idx).posterior
+    
+    return h0_dat, h1_dat
+# -----------------------------------------------------------------------------
+#%% ---------------------------------------------------------------------------
+# az_effect_size
+# -----------------------------------------------------------------------------
+# DESCRIPTION
+def effect_size(h0_dat,h1_dat,sig_diff=0.05):
+    n_h0 = h0_dat['scaled_value_sigma'].size
+    n_h1 = h1_dat['scaled_value_sigma'].size
+    n = n_h1 + n_h0
+    if f_test(h0_dat['scaled_value_sigma'],h1_dat['scaled_value_sigma'])<sig_diff:
+        print("Computing corrected Glass's delta")
     else:
         print("Computing corrected Hedge's g")
-        sd_pooled = ( ( (n_c-1)*c_post['scaled_value_sigma']**2 + (n_t-1)*t_post['scaled_value_sigma']**2) / (n_c+n_t-2) )**(1/2)
-    diff_of_means = t_post['scaled_value_mean'].mean(axis=2).values-c_post['scaled_value_mean'].mean(axis=2).values
+        sd_pooled = ( ( (n_h0-1)*h0_dat['scaled_value_sigma']**2 + (n_h1-1)*h1_dat['scaled_value_sigma']**2) / (n_h0+n_h1-2) )**(1/2)
+    diff_of_means = h1_dat['scaled_value_mean'].mean(axis=2).values-h0_dat['scaled_value_mean'].mean(axis=2).values
     return (diff_of_means/sd_pooled) * ((n-3)/(n-2.25))*((n-2)/n)**(1/2)
 # -----------------------------------------------------------------------------
-#%% ---------------------------------------------------------------------------
-# closest_value
-# -----------------------------------------------------------------------------
-# DESCRIPTION
-def closest_value(input_data, input_value):
-    """
-    find closest index and value to input_value in input_data
-    returns (index, closest_values)
-    https://www.entechin.com/find-nearest-value-list-python"
-    """
-    import numpy as np
-    difference = lambda input_data : abs(input_data - input_value)
-    res = min(input_data, key=difference)
-    return (np.where(input_data==res),res)
-# -----------------------------------------------------------------------------
-#%% ---------------------------------------------------------------------------
-# intersect_two_dist
-# -----------------------------------------------------------------------------
-# DESCRIPTION
-def intersect_two_dist(adat,bdat,stepsize=1000,pltQ=False):
-    """
-    find the intersection point of two data distributions
-    adat ... data of the first distribution
-    bdat ... data of the second distribution
-    stepsize ... for evaluating x between kde peaks
-    """
-    import numpy as np
-    from scipy.optimize import minimize
-    from scipy import stats
-    # determine which one is left/right orientation
-    if np.max([adat.mean(),bdat.mean()]) == adat.mean():
-        mn_right = adat.mean()
-        dat_right= adat
-        right_pdf=stats.gaussian_kde(adat)
-        mn_left = bdat.mean()
-        dat_left = bdat
-        left_pdf=stats.gaussian_kde(bdat)
-    else:
-        mn_left = adat.mean()
-        dat_left = adat
-        left_pdf=stats.gaussian_kde(adat)
-        mn_right = bdat.mean()
-        dat_right= bdat
-        right_pdf=stats.gaussian_kde(bdat)
 
-    # get some x values between peaks for searching the intersection point 
-    x_between = np.arange(mn_left,mn_right,stepsize/adat.size)
-    
-    # deviding the two parts of the distributions is close to 1 at the point, fit pdfs and find an estimate
-    closest_to_one = closest_value(left_pdf(x_between)/right_pdf(x_between), 1)
-    
-    # optimize the estimate using closest_to_one as initial guess and the peaks as bounds
-    # bnds = ((mn_left, mn_right), (mn_left, mn_right)) those bounds do not work for the priors
-    intersect = minimize(lambda x: np.abs(1-left_pdf(x)/right_pdf(x))[0], x_between[closest_to_one[0]], method='Nelder-Mead', tol=1e-6)#, bounds=bnds
-    
-    # probability that the distributions are equal
-    p_eq = left_pdf.integrate_box_1d( intersect.x[0],np.inf) + right_pdf.integrate_box_1d(-np.inf,intersect.x[0])
-    if p_eq > 1:
-        print("!!! WARNING: The probability of equality was calculated > "+str(p_eq)+"; setting it to 1")
-        p_eq = 1
-        
-    if pltQ == True:
-        import matplotlib.pyplot as plt
-        import seaborn as sns
-        print('The intersection point is at '+str( np.round(intersect.x[0],3))+' with y error '+str((1-left_pdf(intersect.x[0])/right_pdf(intersect.x[0]))[0]))
-        sns.kdeplot({'left':dat_left,'right':dat_right},common_norm=False)
-        plt.plot([intersect.x[0],intersect.x[0]],[0,left_pdf(intersect.x)[0]],'o-',alpha=0.5)
-        plt.plot([intersect.x[0],intersect.x[0]],[0,right_pdf(intersect.x)[0]],'o-',alpha=0.5)
-        plt.title('The probability that the distributions are equal is '+str(np.round(p_eq,3)))
-        plt.show()
-    return p_eq
-# -----------------------------------------------------------------------------
-"""
-#%% ---------------------------------------------------------------------------
-# az_bf
-# -----------------------------------------------------------------------------
-# DESCRIPTION
-def az_bf(idata, key, lvl_h0, lvl_h1, ref_val = "equal", prio_odds_set = 1, pltQ = False):
-    " ""
-    set ref_val to "equal" (default) for posterior testing H0 that lvl_h0 == lvl_h1 (H1 that lvl_h0 != lvl_h1)
-    or
-    set ref_val to a number to for testing hypothesis at that point
-    
-    use prio_odds_set = 1 (default) to provide H0 and H1 with the same probabilty,
-    or
-    use None to get the prior belief from the prior distribution
-    " ""
-    # prio_prob_set list of two numers h0 h1 resp
-    # https://en.wikipedia.org/wiki/Bayes_factor
-    # https://bookdown.org/kevin_davisross/bayesian-reasoning-and-methods/bayes-factor.html
-    # https://doi.org/10.3758/s13423-020-01798-5
-    # Bayes Factor approximated as the Savage-Dickey density ratio.
-    # https://github.com/GStechschulte/arviz/commit/e41f0d0f78e969712d26e835ea21a916c0caaefd
-    # import pandas as pd
-    # from scipy import stats
-    # import matplotlib.pyplot as plt
-    # import seaborn as sns
-    h1_dat_post = (idata.posterior.stack(draws=("chain", "draw"))[key]).sel({key+'_dim':lvl_h1})
-    h0_dat_post = (idata.posterior.stack(draws=("chain", "draw"))[key]).sel({key+'_dim':lvl_h0})
-
-    if (type(ref_val) == float) or (type(ref_val) == int):
-        h1_pdf_post = stats.gaussian_kde(h1_dat_post) # get kde for h1 samples in posterior
-        h1_prob_post_at_ref = h1_pdf_post(ref_val)[0] # get h1 probability in posterior at reference value
-        h0_pdf_post = stats.gaussian_kde(h0_dat_post)
-        h0_prob_post_at_ref = h0_pdf_post(ref_val)[0]
-        if prio_odds_set != None:
-            # set prior odds for senitivity analzsis
-            h0_prob_prio_at_ref = 1/prio_odds_set
-            h1_prob_prio_at_ref = 1
-        else:
-            h1_dat_prio = (idata.prior.stack(draws=("chain", "draw"))[key]).sel({key+'_dim':lvl_h1})
-            h0_dat_prio = (idata.prior.stack(draws=("chain", "draw"))[key]).sel({key+'_dim':lvl_h0})
-            h1_pdf_prio = stats.gaussian_kde(h1_dat_prio) # get kde for h1 samples in prior
-            h1_prob_prio_at_ref = h1_pdf_prio(ref_val)[0] # get h1 probability in prior at reference value
-            h0_pdf_prio = stats.gaussian_kde(h0_dat_prio)
-            h0_prob_prio_at_ref = h0_pdf_prio(ref_val)[0]
-        
-    elif ref_val == 'equal':
-        h0_prob_post_at_ref = intersect_two_dist(h0_dat_post,h1_dat_post)
-        h1_prob_post_at_ref = 1 - h0_prob_post_at_ref
-        if prio_odds_set != None:
-            # set prior odds for senitivity analysis
-            h0_prob_prio_at_ref = 1/prio_odds_set
-            h1_prob_prio_at_ref = 1
-        else:
-            h1_dat_prio = (idata.prior.stack(draws=("chain", "draw"))[key]).sel({key+'_dim':lvl_h1})
-            h0_dat_prio = (idata.prior.stack(draws=("chain", "draw"))[key]).sel({key+'_dim':lvl_h0})
-            h0_prob_prio_at_ref = intersect_two_dist(h0_dat_prio,h1_dat_prio)
-            h1_prob_prio_at_ref = 1 - h0_prob_prio_at_ref     
-    else:
-        print('ref_val was not correctly specified!')
-    # Odds
-    odds_prio = h1_prob_prio_at_ref/h0_prob_prio_at_ref
-    odds_post = h1_prob_post_at_ref/h0_prob_post_at_ref
-    # Bayesian Factors
-    bf10 = odds_post/odds_prio
-    bf01 = 1/bf10
-    # Plots
-    if pltQ == True:
-        fig, axs = plt.subplots(1,2,figsize=(12,3))
-        if prio_odds_set == None:
-            sns.kdeplot({lvl_h1:h1_dat_prio,lvl_h0:h0_dat_prio},common_norm=False,ax=axs[0])
-        sns.kdeplot({lvl_h1:h1_dat_post,lvl_h0:h0_dat_post},common_norm=False,ax=axs[1])
-        axs[0].plot([ref_val,ref_val],[h1_prob_prio_at_ref,h0_prob_prio_at_ref],'k-o',alpha = 0.7)
-        axs[1].plot([ref_val,ref_val],[h1_prob_post_at_ref,h0_prob_post_at_ref],'k-o',alpha = 0.7)
-        axs[0].plot([ref_val,ref_val],[0,np.min([h1_prob_prio_at_ref,h0_prob_prio_at_ref])],'k:')
-        axs[1].plot([ref_val,ref_val],[0,np.min([h1_prob_post_at_ref,h0_prob_post_at_ref])],'k:')
-        axs[0].set_title('Prior')
-        axs[1].set_title('Posterior')
-        plt.show()
-    if (type(ref_val) == float) or (type(ref_val) == int):
-        print('BF10 ('+lvl_h1+'=='+str(ref_val)+')'+' = '+str(np.round(bf10,3))+'\nBF01 ('+lvl_h0+'=='+str(ref_val)+') = '+str(np.round(bf01,3)))
-    d = {'pH1':h1_prob_prio_at_ref,
-         'pH0':h0_prob_prio_at_ref,
-         'pH1gD':h1_prob_post_at_ref,
-         'pH0gD':h0_prob_post_at_ref,
-         'prior_odds': odds_prio,
-         'posterior_odds': odds_post,
-         'bf10': bf10,
-         'bf01': bf01 }
-    return pd.DataFrame(d,index=['Test_on_'+str(ref_val)]).astype(float).transpose()
-"""
-# -----------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
 # bambi2idata4ppc
 # -----------------------------------------------------------------------------
@@ -417,29 +253,30 @@ def ppc_bambi(idata,df,var_names=[],subset=[],check_names = ['prior','posterior'
 # az_plot_contrast
 # -----------------------------------------------------------------------------
 # DESCRIPTION
-def az_plot_contrast(idat,df,dim,lvl_h0,lvl_h0_dat,lvl_h1,lvl_h1_dat,mode,t2,ref_val=0, hdi = [-0.1,0.1],sav_plot_q=True):
+def az_plot_contrast(idat,df,dim,lvl_h0,lvl_h1,t2,mode="global",dim_type='',subdim_type='',ref_val=0, hdi = [-0.1,0.1],sav_plot_q=True):
     import seaborn as sns
     import matplotlib.pyplot as plt
     import numpy as np
     import arviz as az
+    """
+    update to dat-in version
+    """
+    if mode == "global":
+        h0_dat = (dat.posterior.stack(draws=("chain", "draw"))[dim]).sel({dim+'_dim':lvl_h0})
+        h1_dat = (dat.posterior.stack(draws=("chain", "draw"))[dim]).sel({dim+'_dim':lvl_h1})
+    else:
+        h0_dat = (idat.posterior.stack(draws=("chain", "draw"))[dim_type+':'+subdim_type]).sel({dim_type+':'+subdim_type+'_dim':dim+', '+lvl_h0})
+        h1_dat = (idat.posterior.stack(draws=("chain", "draw"))[dim_type+':'+subdim_type]).sel({dim_type+':'+subdim_type+'_dim':dim+', '+lvl_h1})
     
-    if mode == 'global':
-        bf_df = az_bf(idat,key=dim,lvl_h0=lvl_h0,lvl_h1=lvl_h1).round(3)
-        effs = az_effect_size(idat,df,{dim:[lvl_h0,lvl_h1]})
-    elif mode == 'tests':
-        bf_df = az_bf(idat,key='test:intervention',lvl_h0=lvl_h0,lvl_h1=lvl_h1).round(3)
-        effs = az_effect_size(idat,df,{'test':dim},{'intervention':['C','V']})
-    elif mode == 'IDs':
-        bf_df = az_bf(idat,key='ID:intervention',lvl_h0=lvl_h0,lvl_h1=lvl_h1).round(3)
-        effs = az_effect_size(idat,df,{'ID':dim},{'intervention':['C','V']})
+    bf_df = bayes_factor(h0_dat,h1_dat)
+    
+    es_d0, es_d1 = get_data_for_effect_size(idat,df,{dim:[lvl_h0,lvl_h1]})
+    effs  = effect_size(es_d0, es_d1)
     
     # Plot
     fig,axs = plt.subplots(1,3,figsize=(12,3))
-    if mode == 'global':
-        sns.kdeplot({lvl_h1+'$_\Delta$':lvl_h1_dat,lvl_h0+'$_\Delta$':lvl_h0_dat}, fill=True, ax=axs[0])
-    elif (mode == 'tests') or (mode == 'IDs'):
-        sns.kdeplot({'intervention$_\Delta$':lvl_h1_dat,'control$_\Delta$':lvl_h0_dat}, fill=True, ax=axs[0])
-    sns.despine();
+    sns.kdeplot({lvl_h1+'$_\Delta$':h1_dat,lvl_h0+'$_\Delta$':h0_dat}, fill=True, ax=axs[0])
+    sns.despine()
     axs[0].set_title(t2+' BF$_{\mathrm{1,0}}$ = '+str(np.round(bf_df.loc['bf10',:][0],2))+', '+
                         'BF$_{\mathrm{0,1}}$ = '+str(np.round(bf_df.loc['bf01',:][0],2)),size=14)
     axs[0].set_xlabel(r'declined < 0 < improved'
@@ -447,48 +284,35 @@ def az_plot_contrast(idat,df,dim,lvl_h0,lvl_h0_dat,lvl_h1,lvl_h1_dat,mode,t2,ref
                       "scaled value",size=14)
     axs[0].set_ylabel('density',size=14)
     
-    az.plot_posterior(effs, ref_val=ref_val, rope=(hdi[0],hdi[1]),
-                  hdi_prob=0.95, ax=axs[1]);
-    if mode == 'global':
-        axs[1].set_title(dim+' '+lvl_h1+'$_\Delta$ - '+lvl_h0+'$_\Delta$ contrast',size=14)
-    elif (mode == 'tests') or (mode == 'IDs'):
-        axs[1].set_title(t2+' treatment$_\Delta$ - control$_\Delta$',size=14)
+    az.plot_posterior(effs, ref_val=ref_val, rope=(hdi[0],hdi[1]),hdi_prob=0.95, ax=axs[1]);
+    axs[1].set_title(t2+' '+lvl_h1+'$_\Delta$ - '+lvl_h0+'$_\Delta$ contrast',size=14)
     axs[1].set_xlabel(r'declined < 0 < improved'
                       '\n'
                       "effect size",size=14)
-    # ---
-    if mode == 'global':
-        _,p05,p95,ax_ppbf = prior_prob_BF(idat, dim, lvl_h0, lvl_h1,fig=fig,ax=axs[2])
-    elif mode == 'tests':
-        _,p05,p95,ax_ppbf = prior_prob_BF(idat, 'test:intervention', lvl_h0, lvl_h1,fig=fig,ax=axs[2])
-    elif mode == 'IDs':
-        _,p05,p95,ax_ppbf = prior_prob_BF(idat, 'ID:intervention', lvl_h0, lvl_h1,fig=fig,ax=axs[2])
-    # ---
+    
+    _,p05,p95,ax_ppbf = prior_prob_BF(h0_dat,h1_dat,fig=fig,ax=axs[2])
+
     plt.gcf().tight_layout()
     if sav_plot_q:
-    	plt.savefig('bambi_'+dim+'.pdf')
+        plt.savefig('bambi_'+dim+'_'+dim_type+'_'+subdim_type+'.pdf')
     plt.show()
     return bf_df, effs, (p05,p95)
 # -----------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
 # bayes_factor
 # -----------------------------------------------------------------------------
-def az_bf(idata, key, lvl_h0, lvl_h1, prior_sim=0.5, prior_diff=0.5):
-    import xarray as xr
+def bayes_factor(da0, da1, prior_sim=0.5, prior_diff=0.5, kde_bandwidth = 0.001):
     import numpy as np
     from scipy.stats import gaussian_kde #norm
     import pandas as pd
     """
     """
-    # selected xarray.DataArray(s)
-    da1 = (idata.posterior.stack(draws=("chain", "draw"))[key]).sel({key+'_dim':lvl_h1})
-    da2 = (idata.posterior.stack(draws=("chain", "draw"))[key]).sel({key+'_dim':lvl_h0})
     
     # Compute the mean and standard deviation of the two input DataArrays
+    mean0 = da0.mean().values
+    #std1 = da0.std().values
     mean1 = da1.mean().values
     #std1 = da1.std().values
-    mean2 = da2.mean().values
-    #std2 = da2.std().values
     
     # Compute the likelihood for the similarity hypothesis
     # sd and mean method
@@ -497,11 +321,11 @@ def az_bf(idata, key, lvl_h0, lvl_h1, prior_sim=0.5, prior_diff=0.5):
     # sklearn may provides more kernels
         #from sklearn.neighbors import KernelDensity as kde
         #np.exp(kde(kernel='epanechnikov',bandwidth=0.005).fit([[i] for i in da1.values]).score_samples([[mean2]]))
-    odds_sim = gaussian_kde(da1).pdf(mean2) * gaussian_kde(da2).pdf(mean1)
+    odds_sim = gaussian_kde(da0,kde_bandwidth).pdf(mean1) * gaussian_kde(da1,kde_bandwidth).pdf(mean0)
     
     # Compute the likelihood for the difference hypothesis
     #odds_diff = (norm(mean1, std1).pdf(mean1) * norm(mean2, std2).pdf(mean2))
-    odds_diff = gaussian_kde(da1).pdf(mean1) * gaussian_kde(da2).pdf(mean2)
+    odds_diff = gaussian_kde(da0,kde_bandwidth).pdf(mean0) * gaussian_kde(da1,kde_bandwidth).pdf(mean1)
     
     # Compute the probability for similarity
     p_sim = (odds_sim * prior_sim) / (odds_sim * prior_sim + odds_diff * prior_diff)
@@ -525,10 +349,164 @@ def az_bf(idata, key, lvl_h0, lvl_h1, prior_sim=0.5, prior_diff=0.5):
          'bf01': BF_sim }
     
     return pd.DataFrame(d,index=['Test_H0_on_similarity']).astype(float).transpose()
+
+# -----------------------------------------------------------------------------
+#%% ---------------------------------------------------------------------------
+# myROC
+# -----------------------------------------------------------------------------
+def myROC(nums,cats,pos_cat=True,neg_cat=False,steps=1000):
+    """
+    Receiver operating characteristic from false-positive and true positive rates
+    #vectorized
+    
+    INPUT
+    ------
+    nums    ... numpy array of numbers, dim: 1. The data
+    cats    ... numpy array of boolean, dim: 1. The reference categories: 
+                - True:  Responder (or as defined in pos_cat)
+                - False: Non-Responder (or as defined in neg_cat)
+                
+    OPTIOAL
+    ------
+    pos_cat ... single str or boolian defining responder
+    neg_cat ... single str or boolian defining non-responder
+    steps   ... int. Number+2 of equally spaced thresholds for calculating tpr and fpr
+    
+    OUTPUT
+    ------
+    tpr     ... numpy array of floats, sensitivity or true positive rates. Each value represents a different threshold.
+    fpr     ... numpy array of floats, float, 1-specificity of false positive rates Each value represents a different threshold.
+    auc     ... single float, maximum of area under/above the curve instead of deflecting the data
+    th_max  ... single float, the data-threshold at the Youden index (or true skill statistic) maximum.
+    J_max   ... single float, the Youden index maximum
+    
+    (c) Harald Penasso 01/2023
+    ToDo: Input checks
+    """
+    import numpy as np
+    step_size = (nums.max()-nums.min())/steps # threshold step size in data units
+    P = cats==pos_cat # condition positive (P) the number of real positive cases in the data
+    N = cats==neg_cat # condition negative (N) the number of real negative cases in the data
+    ths = np.expand_dims(np.arange(nums.min(),nums.max()+2*step_size,step_size),axis=0) # create thresholds
+    nums = np.expand_dims(nums,axis=1) # prepare input for vactorization
+    # true positive (TP) A test result that correctly indicates the presence of a condition or characteristic / P
+    tpr = (np.expand_dims(P,axis=1) * (ths > nums)).sum(axis=0) / P.sum() # sensitivity
+    # true negative (TN) A test result that correctly indicates the absence of a condition or characteristic / N
+    fpr = (1-(np.expand_dims(N,axis=1) * ~(ths > nums)).sum(axis=0) / N.sum()) # 1-specificity
+    auc = np.trapz(fpr,tpr) # calculate the area under the curve
+    if auc < 0.5:
+        auc = 1-auc # deflect area
+    J = np.abs(np.array(tpr)-np.array(fpr)) # Youden-index or true skill statistic
+    return tpr, fpr, auc, ths[0,np.argmax(J)], J[np.argmax(J)]
+# -----------------------------------------------------------------------------
+#%% ---------------------------------------------------------------------------
+# get_prior_probs
+# -----------------------------------------------------------------------------
+# DESCRIPTION
+def get_prior_probs(vals,prior_probs):
+    from scipy.interpolate import CubicSpline
+    cs = CubicSpline(vals, prior_probs)
+    return [cs(0.05),cs(0.95)]
+# -----------------------------------------------------------------------------
+
+#%% ---------------------------------------------------------------------------
+# prior_prob_BF
+# -----------------------------------------------------------------------------
+# DESCRIPTION
+def prior_prob_BF(da0, da1, fig, ax, stepsize = 0.001,figsize=(4.5,4.5)):
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import numpy as np
+    p_pris = np.arange(10**(-16),1+stepsize,stepsize)
+    vals = []
+    for p_pri in p_pris:
+        vals.append(bayes_factor(da0, da1, prior_sim=1-p_pri, prior_diff=p_pri).loc['pH1gD',:].to_list()[0])
+    bf = bayes_factor(da0, da1, prior_sim=0.5, prior_diff=0.5).loc['bf10',:].to_list()[0]
+    p05,p95 = get_prior_probs(vals,p_pris)
+    if (p95 > 1) or (p95 < 0):
+        p95 = np.nan
+    if (p05 > 1) or (p05 < 0):
+        p05 = np.nan
+    #fig,ax = plt.subplots(1,1,figsize=figsize)
+    ax.plot(p_pris,vals,zorder=100,linewidth=3,alpha=0.8)
+    ax.plot((p05,p95),(0.05,0.95),'X', markersize=10)
+    ax.fill_between((0,1),(1,1),(0.95,0.95),color='k',alpha=0.2,linewidth=0,zorder=1)
+    ax.fill_between((0,1),(0,0),(0.05,0.05),color='k',alpha=0.2,linewidth=0,zorder=1)
+    if ~np.isnan(p95):
+        ax.text(0.2,0.85,'Prior s.t. Post > 0.95 = '+str(np.round(p95,2)),zorder=1000)
+    if ~np.isnan(p05):
+        ax.text(p05+0.05,0.07,'Prior s.t. Post < 0.05 = '+str(np.round(p05,2)),zorder=1000)
+    ax.set_xlabel('Prior prob. dists differ')
+    ax.set_ylabel('Post. prob. dists differ')
+    #ax.set_title(key+' BF ('+lvl_h0+'/'+lvl_h1+') = '+str(np.round(bf,2)))
+    ax.grid()
+    sns.despine(right=True, top=True)
+    ax.set_xlim((0,1))
+    ax.set_ylim((0,1))
+    plt.tight_layout()
+    #plt.savefig('prior_prob_BF_'+key+'.pdf')
+    #plt.show()
+    return bf,p05,p95,ax
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+#%% ---------------------------------------------------------------------------
+# scaleback
+# -----------------------------------------------------------------------------
+# DESCRIPTION
+def scaleback(t,df):
+    s = df[df['test']==t].scaler.mean()
+    if t == 'VAS':
+        s = s/10
+        unit = ' [cm]'
+        t_new = 'health VAS'
+    elif t == '6minGT_2min':
+        s = s/100
+        unit = r' [$\times10^2$ m]'
+        t_new = 'walk 2 min'
+    elif t == 'TUGZeit':
+        unit = ' [s]'
+        t_new = 'TUG'
+    elif t == '10m':
+        unit = ' [s]'
+        t_new = 'walk 10 m'
+    elif t == 'FSST':
+        unit = ' [s]'
+        t_new = t 
+    elif t == 'velocity':
+        unit = r' [km/h]'
+        t_new = 'gait speed'
+        s=s
+    elif t == 'StepL_diff':
+        unit = r' [$\times10^1$ cm]'
+        t_new = 'step length $\Delta$'
+        s=s/10
+    elif t == 'StanceT_diff':
+        unit = r' [$\times10^{-1}$ s]'
+        t_new = 'stance time $\Delta$'
+        s=s*10
+    elif t == 'StanceT_Aside':
+        unit = r' [$\times10^{-2}$ s]'
+        t_new = 'stance time AL'
+        s=s*10
+    elif t == 'StanceT_UAside':
+        unit = r' [$\times10^{-2}$ s]'
+        t_new = 'stance time UL'
+        s=s*10
+    elif t == 'StepL_Aside':
+        unit = r' [$\times10^1$ cm]'
+        t_new = 'step length AL'
+        s=s/10
+    elif t == 'StepL_UAside':
+        unit = r' [$\times10^1$ cm]'
+        t_new = 'step length UL'
+        s=s/10
+    return s,unit,t_new
+# -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
 # get_StanceT_Diff
 # -----------------------------------------------------------------------------
+# DESCRIPTION
 def get_StanceT_Diff(method = 'StanceT_Diff'):
     import pandas as pd
     import numpy as np
@@ -621,102 +599,4 @@ def get_StanceT_Diff(method = 'StanceT_Diff'):
     df_piv.columns = multiIDX
     df_piv = df_piv.reset_index()
     return df_piv
-# -----------------------------------------------------------------------------
-# -----------------------------------------------------------------------------
-#%% ---------------------------------------------------------------------------
-# myROC
-# -----------------------------------------------------------------------------
-def myROC(nums,cats,pos_cat=True,neg_cat=False,steps=1000):
-    """
-    Receiver operating characteristic from false-positive and true positive rates
-    #vectorized
-    
-    INPUT
-    ------
-    nums    ... numpy array of numbers, dim: 1. The data
-    cats    ... numpy array of boolean, dim: 1. The reference categories: 
-                - True:  Responder (or as defined in pos_cat)
-                - False: Non-Responder (or as defined in neg_cat)
-                
-    OPTIOAL
-    ------
-    pos_cat ... single str or boolian defining responder
-    neg_cat ... single str or boolian defining non-responder
-    steps   ... int. Number+2 of equally spaced thresholds for calculating tpr and fpr
-    
-    OUTPUT
-    ------
-    tpr     ... numpy array of floats, sensitivity or true positive rates. Each value represents a different threshold.
-    fpr     ... numpy array of floats, float, 1-specificity of false positive rates Each value represents a different threshold.
-    auc     ... single float, maximum of area under/above the curve instead of deflecting the data
-    th_max  ... single float, the data-threshold at the Youden index (or true skill statistic) maximum.
-    J_max   ... single float, the Youden index maximum
-    
-    (c) Harald Penasso 01/2023
-    ToDo: Input checks
-    """
-    import numpy as np
-    step_size = (nums.max()-nums.min())/steps # threshold step size in data units
-    P = cats==pos_cat # condition positive (P) the number of real positive cases in the data
-    N = cats==neg_cat # condition negative (N) the number of real negative cases in the data
-    ths = np.expand_dims(np.arange(nums.min(),nums.max()+2*step_size,step_size),axis=0) # create thresholds
-    nums = np.expand_dims(nums,axis=1) # prepare input for vactorization
-    # true positive (TP) A test result that correctly indicates the presence of a condition or characteristic / P
-    tpr = (np.expand_dims(P,axis=1) * (ths > nums)).sum(axis=0) / P.sum() # sensitivity
-    # true negative (TN) A test result that correctly indicates the absence of a condition or characteristic / N
-    fpr = (1-(np.expand_dims(N,axis=1) * ~(ths > nums)).sum(axis=0) / N.sum()) # 1-specificity
-    auc = np.trapz(fpr,tpr) # calculate the area under the curve
-    if auc < 0.5:
-        auc = 1-auc # deflect area
-    J = np.abs(np.array(tpr)-np.array(fpr)) # Youden-index or true skill statistic
-    return tpr, fpr, auc, ths[0,np.argmax(J)], J[np.argmax(J)]
-# -----------------------------------------------------------------------------
-#%% ---------------------------------------------------------------------------
-# get_prior_probs
-# -----------------------------------------------------------------------------
-# DESCRIPTION
-def get_prior_probs(vals,prior_probs):
-    from scipy.interpolate import CubicSpline
-    cs = CubicSpline(vals, prior_probs)
-    return [cs(0.05),cs(0.95)]
-# -----------------------------------------------------------------------------
-
-#%% ---------------------------------------------------------------------------
-# prior_prob_BF
-# -----------------------------------------------------------------------------
-# DESCRIPTION
-def prior_prob_BF(idat, key, lvl_h0, lvl_h1, fig, ax, stepsize = 0.001,figsize=(4.5,4.5)):
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-    import numpy as np
-    p_pris = np.arange(10**(-16),1+stepsize,stepsize)
-    vals = []
-    for p_pri in p_pris:
-        vals.append(az_bf(idat, key=key, lvl_h0=lvl_h0, lvl_h1=lvl_h1, prior_sim=1-p_pri, prior_diff=p_pri).loc['pH1gD',:].to_list()[0])
-    bf = az_bf(idat, key=key, lvl_h0=lvl_h0, lvl_h1=lvl_h1, prior_sim=0.5, prior_diff=0.5).loc['bf10',:].to_list()[0]
-    p05,p95 = get_prior_probs(vals,p_pris)
-    if (p95 > 1) or (p95 < 0):
-        p95 = np.nan
-    if (p05 > 1) or (p05 < 0):
-        p05 = np.nan
-    #fig,ax = plt.subplots(1,1,figsize=figsize)
-    ax.plot(p_pris,vals,zorder=100,linewidth=3,alpha=0.8)
-    ax.plot((p05,p95),(0.05,0.95),'X', markersize=10)
-    ax.fill_between((0,1),(1,1),(0.95,0.95),color='k',alpha=0.2,linewidth=0,zorder=1)
-    ax.fill_between((0,1),(0,0),(0.05,0.05),color='k',alpha=0.2,linewidth=0,zorder=1)
-    if ~np.isnan(p95):
-        ax.text(0.2,0.85,'Prior s.t. Post > 0.95 = '+str(np.round(p95,2)),zorder=1000)
-    if ~np.isnan(p05):
-        ax.text(p05+0.05,0.07,'Prior s.t. Post < 0.05 = '+str(np.round(p05,2)),zorder=1000)
-    ax.set_xlabel('Prior prob. dists differ')
-    ax.set_ylabel('Post. prob. dists differ')
-    #ax.set_title(key+' BF ('+lvl_h0+'/'+lvl_h1+') = '+str(np.round(bf,2)))
-    ax.grid()
-    sns.despine(right=True, top=True)
-    ax.set_xlim((0,1))
-    ax.set_ylim((0,1))
-    plt.tight_layout()
-    #plt.savefig('prior_prob_BF_'+key+'.pdf')
-    #plt.show()
-    return bf,p05,p95,ax
 # -----------------------------------------------------------------------------
