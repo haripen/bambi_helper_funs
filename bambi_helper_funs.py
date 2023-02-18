@@ -75,19 +75,19 @@ def sns_to_hex(sea_col):
 # get_data_for_effect_size
 # -----------------------------------------------------------------------------
 # DESCRIPTION
-def get_data_for_effect_size(idata,df,main_key,sub_key=None):
-    
-    if sub_key==None:
-        print("Effect size of "+list(main_key.keys())[0]+" "+main_key[list(main_key.keys())[0]][1]+" - "+ main_key[list(main_key.keys())[0]][0])
-        h0_idx = seli(df,{list(main_key.keys())[0]:main_key[list(main_key.keys())[0]][0]})
-        h1_idx = seli(df,{list(main_key.keys())[0]:main_key[list(main_key.keys())[0]][1]})
-    else:
-        print("Effect size of "+list(main_key.keys())[0]+" "+main_key[list(main_key.keys())[0]]+" contrasting "+list(sub_key.keys())[0]+" "+sub_key[list(sub_key.keys())[0]][1]+" - "+ sub_key[list(sub_key.keys())[0]][0])
-        h0_idx = intersecti([seli(df,main_key),seli(df,{list(sub_key.keys())[0]:sub_key[list(sub_key.keys())[0]][0]})])
-        h1_idx = intersecti([seli(df,main_key),seli(df,{list(sub_key.keys())[0]:sub_key[list(sub_key.keys())[0]][1]})])
-        
-    h0_dat = az_isel_scaled_value(idata,h0_idx).posterior
-    h1_dat = az_isel_scaled_value(idata,h1_idx).posterior
+def sel_data_from_az(idata,df,main_key,sub_key=None, kind = None):
+    if kind == 'effect_size':
+        if sub_key==None:
+            print("Effect size of "+list(main_key.keys())[0]+" "+main_key[list(main_key.keys())[0]][1]+" - "+ main_key[list(main_key.keys())[0]][0])
+            h0_idx = seli(df,{list(main_key.keys())[0]:main_key[list(main_key.keys())[0]][0]})
+            h1_idx = seli(df,{list(main_key.keys())[0]:main_key[list(main_key.keys())[0]][1]})
+        else:
+            print("Effect size of "+list(main_key.keys())[0]+" "+main_key[list(main_key.keys())[0]]+" contrasting "+list(sub_key.keys())[0]+" "+sub_key[list(sub_key.keys())[0]][1]+" - "+ sub_key[list(sub_key.keys())[0]][0])
+            h0_idx = intersecti([seli(df,main_key),seli(df,{list(sub_key.keys())[0]:sub_key[list(sub_key.keys())[0]][0]})])
+            h1_idx = intersecti([seli(df,main_key),seli(df,{list(sub_key.keys())[0]:sub_key[list(sub_key.keys())[0]][1]})])
+
+        h0_dat = az_isel_scaled_value(idata,h0_idx).posterior
+        h1_dat = az_isel_scaled_value(idata,h1_idx).posterior
     
     return h0_dat, h1_dat
 # -----------------------------------------------------------------------------
@@ -604,4 +604,20 @@ def get_StanceT_Diff(method = 'StanceT_Diff'):
     df_piv.columns = multiIDX
     df_piv = df_piv.reset_index()
     return df_piv
+# -----------------------------------------------------------------------------
+#%% ---------------------------------------------------------------------------
+# idx_from_dict
+# -----------------------------------------------------------------------------
+# DESCRIPTION
+def idx_from_dict(d,df):
+    """
+    d ... dict, each key corresponds to a df column and each value to a cell entry of that column
+    returns combined matches as boolian array
+    """
+    for i,k in enumerate(d):
+        if i == 0:
+            idx_bool = df[k]==d[k]
+        else:
+            idx_bool = idx_bool * (df[k]==d[k])
+    return idx_bool
 # -----------------------------------------------------------------------------
