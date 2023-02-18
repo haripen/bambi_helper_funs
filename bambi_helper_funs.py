@@ -264,13 +264,13 @@ def az_plot_contrast(idat,df,dim,lvl_h0,lvl_h1,t2,mode="global",dim_type='',subd
     if mode == "global":
         h0_dat = (dat.posterior.stack(draws=("chain", "draw"))[dim]).sel({dim+'_dim':lvl_h0})
         h1_dat = (dat.posterior.stack(draws=("chain", "draw"))[dim]).sel({dim+'_dim':lvl_h1})
+        es_d0, es_d1 = get_data_for_effect_size(idat,df,{dim:[lvl_h0,lvl_h1]})
     else:
         h0_dat = (idat.posterior.stack(draws=("chain", "draw"))[dim_type+':'+subdim_type]).sel({dim_type+':'+subdim_type+'_dim':dim+', '+lvl_h0})
         h1_dat = (idat.posterior.stack(draws=("chain", "draw"))[dim_type+':'+subdim_type]).sel({dim_type+':'+subdim_type+'_dim':dim+', '+lvl_h1})
-    
+        es_d0, es_d1 = get_data_for_effect_size(idat,df,{dim_type:dim},{subdim_type:[lvl_h0,lvl_h1]})
+            
     bf_df = bayes_factor(h0_dat,h1_dat)
-    
-    es_d0, es_d1 = get_data_for_effect_size(idat,df,{dim:[lvl_h0,lvl_h1]})
     effs  = effect_size(es_d0, es_d1)
     
     # Plot
@@ -418,15 +418,21 @@ def prior_prob_BF(da0, da1, fig, ax, stepsize = 0.001,figsize=(4.5,4.5)):
     import seaborn as sns
     import numpy as np
     p_pris = np.arange(10**(-16),1+stepsize,stepsize)
-    vals = []
+    vals = [0]
     for p_pri in p_pris:
         vals.append(bayes_factor(da0, da1, prior_sim=1-p_pri, prior_diff=p_pri).loc['pH1gD',:].to_list()[0])
+    p_pris = np.insert(p_pris,0,0)
     bf = bayes_factor(da0, da1, prior_sim=0.5, prior_diff=0.5).loc['bf10',:].to_list()[0]
     p05,p95 = get_prior_probs(vals,p_pris)
-    if (p95 > 1) or (p95 < 0):
-        p95 = np.nan
-    if (p05 > 1) or (p05 < 0):
-        p05 = np.nan
+    if (p95 > 1):
+        p95 = 1.0
+    elif (p95 < 0):
+        p95 = 0.0
+    if (p05 > 1):
+        p05 = 1.0
+    elif (p05 < 0):
+        p05 = 0.0
+    print(p95)
     #fig,ax = plt.subplots(1,1,figsize=figsize)
     ax.plot(p_pris,vals,zorder=100,linewidth=3,alpha=0.8)
     ax.plot((p05,p95),(0.05,0.95),'X', markersize=10)
