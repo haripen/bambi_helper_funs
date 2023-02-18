@@ -432,7 +432,6 @@ def prior_prob_BF(da0, da1, fig, ax, stepsize = 0.001,figsize=(4.5,4.5)):
         p05 = 1.0
     elif (p05 < 0):
         p05 = 0.0
-    print(p95)
     #fig,ax = plt.subplots(1,1,figsize=figsize)
     ax.plot(p_pris,vals,zorder=100,linewidth=3,alpha=0.8)
     ax.plot((p05,p95),(0.05,0.95),'X', markersize=10)
