@@ -72,23 +72,56 @@ def sns_to_hex(sea_col):
     return '#%02x%02x%02x' % tuple([int(i) for i in (np.array(sea_col)*255).round()])
 # -----------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
-# get_data_for_effect_size
+# sel_data_from_az
 # -----------------------------------------------------------------------------
 # DESCRIPTION
-def sel_data_from_az(idata,df,main_key,sub_key=None, kind = None):
-    if kind == 'effect_size':
-        if sub_key==None:
-            print("Effect size of "+list(main_key.keys())[0]+" "+main_key[list(main_key.keys())[0]][1]+" - "+ main_key[list(main_key.keys())[0]][0])
-            h0_idx = seli(df,{list(main_key.keys())[0]:main_key[list(main_key.keys())[0]][0]})
-            h1_idx = seli(df,{list(main_key.keys())[0]:main_key[list(main_key.keys())[0]][1]})
-        else:
-            print("Effect size of "+list(main_key.keys())[0]+" "+main_key[list(main_key.keys())[0]]+" contrasting "+list(sub_key.keys())[0]+" "+sub_key[list(sub_key.keys())[0]][1]+" - "+ sub_key[list(sub_key.keys())[0]][0])
-            h0_idx = intersecti([seli(df,main_key),seli(df,{list(sub_key.keys())[0]:sub_key[list(sub_key.keys())[0]][0]})])
-            h1_idx = intersecti([seli(df,main_key),seli(df,{list(sub_key.keys())[0]:sub_key[list(sub_key.keys())[0]][1]})])
+def sel_data_from_az(idata,df,h0_dict,h1_dict=None, kind = None, mode = None, kde_bandwidth = 0.001, random_seed=1234):
+    from scipy.stats import gaussian_kde
+    import numpy as np
+    if kind == 'null' and h1_dict==None:
+        # Loop through key-item pairs and gett boolian array for selection
+        idx_bool_da0 =  idx_from_dict(h0_dict,df)
+        h1_dat = az_isel_scaled_value(idata,idx_bool_da0)['posterior']
+        h0_dat = az_isel_scaled_value(idata,idx_bool_da0)['posterior']
 
-        h0_dat = az_isel_scaled_value(idata,h0_idx).posterior
-        h1_dat = az_isel_scaled_value(idata,h1_idx).posterior
-    
+        # center h0_dat _mean to 0
+        h0_dat['scaled_value_mean'] = h0_dat.scaled_value_mean-h0_dat.scaled_value_mean.mean()
+        # resample h0_dat distribiutions randomly
+        obs = list() 
+        for c in h0_dat.chain:
+            mn = list()
+            for i,o in enumerate(h0_dat.scaled_value_obs):
+                vals = h0_dat['scaled_value_mean'].sel(scaled_value_obs=int(o),chain=int(c)).values
+                mn.append(gaussian_kde(vals,kde_bandwidth).resample(len(vals),random_seed+i)[0])
+            obs.append(mn)
+        h0_dat['scaled_value_mean'].values = np.swapaxes(obs,1,2) 
+        sig = list()
+        for i,c in enumerate(h0_dat.chain):
+            vals = h0_dat['scaled_value_sigma'].sel(chain=int(c)).values
+            sig.append(gaussian_kde(vals,kde_bw).resample(len(vals),random_seed+i)[0])
+        h0_dat['scaled_value_sigma'].values=sig
+    if kind == 'effect_size' and h1_dict != None:
+        idx_bool_da0 =  idx_from_dict(h0_dict,df)
+        idx_bool_da1 =  idx_from_dict(h1_dict,df)
+        h0_dat = az_isel_scaled_value(idata,idx_bool_da0)['posterior']
+        h1_dat = az_isel_scaled_value(idata,idx_bool_da1)['posterior']
+        
+    if kind == "bayes_factor":
+        if mode == "global":
+            col_H = list(h0_dict.keys())[0]
+            col_H_lvl_h0 = h0_dict[col_H]
+            col_H_lvl_h1 = h1_dict[col_H]
+            h0_dat = (idata.posterior.stack(draws=("chain", "draw"))[col_H]).sel({col_H+'_dim':col_H_lvl_h0})
+            h1_dat = (idata.posterior.stack(draws=("chain", "draw"))[col_H]).sel({col_H+'_dim':col_H_lvl_h1})        
+        elif mode == "ids" or mode == "tests":
+            col_H = list(h0_dict.keys())[0]
+            col_A = list(h0_dict.keys())[1]
+            col_A_lvl =    h0_dict[col_A]
+            col_H_lvl_h0 = h0_dict[col_H]
+            col_H_lvl_h1 = h1_dict[col_H]
+            h0_dat = (idata.posterior.stack(draws=("chain", "draw"))[col_A+':'+col_H]).sel({col_A+':'+col_H+'_dim':col_A_lvl+', '+col_H_lvl_h0})
+            h1_dat = (idata.posterior.stack(draws=("chain", "draw"))[col_A+':'+col_H]).sel({col_A+':'+col_H+'_dim':col_A_lvl+', '+col_H_lvl_h1})
+            
     return h0_dat, h1_dat
 # -----------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
@@ -132,6 +165,7 @@ def az_isel_scaled_value(idata,sel):
 # DESCRIPTION
 def seli(df,d):
     """
+    replace with idx_from_dict
     df ... dataframe
     d ...  dict
     """
@@ -149,6 +183,9 @@ def seli(df,d):
 # -----------------------------------------------------------------------------
 # DESCRIPTION
 def intersecti(a):
+    """
+    replace with idx_from_dict
+    """
     # all inputs must be lists in lists
     for i,b in enumerate(a):
         if i == 0:
@@ -253,29 +290,24 @@ def ppc_bambi(idata,df,var_names=[],subset=[],check_names = ['prior','posterior'
 # az_plot_contrast
 # -----------------------------------------------------------------------------
 # DESCRIPTION
-def az_plot_contrast(idat,df,dim,lvl_h0,lvl_h1,t2,mode="global",dim_type='',subdim_type='',ref_val=0, hdi = [-0.1,0.1],sav_plot_q=True):
+def az_plot_contrast(idata,df,h0_dict,h1_dict,t2,mode=None,ref_val=0, hdi = [-0.1,0.1],sav_plot_q=True):    
     import seaborn as sns
     import matplotlib.pyplot as plt
     import numpy as np
     import arviz as az
     """
-    update to dat-in version
     """
-    if mode == "global":
-        h0_dat = (dat.posterior.stack(draws=("chain", "draw"))[dim]).sel({dim+'_dim':lvl_h0})
-        h1_dat = (dat.posterior.stack(draws=("chain", "draw"))[dim]).sel({dim+'_dim':lvl_h1})
-        es_d0, es_d1 = get_data_for_effect_size(idat,df,{dim:[lvl_h0,lvl_h1]})
-    else:
-        h0_dat = (idat.posterior.stack(draws=("chain", "draw"))[dim_type+':'+subdim_type]).sel({dim_type+':'+subdim_type+'_dim':dim+', '+lvl_h0})
-        h1_dat = (idat.posterior.stack(draws=("chain", "draw"))[dim_type+':'+subdim_type]).sel({dim_type+':'+subdim_type+'_dim':dim+', '+lvl_h1})
-        es_d0, es_d1 = get_data_for_effect_size(idat,df,{dim_type:dim},{subdim_type:[lvl_h0,lvl_h1]})
-            
-    bf_df = bayes_factor(h0_dat,h1_dat)
+    bf_d0, bf_d1 = sel_data_from_az(idata,df,h0_dict,h1_dict,kind="bayes_factor",mode=mode)
+    es_d0, es_d1 = sel_data_from_az(idata,df,h0_dict,h1_dict,kind="effect_size")
+    bf_df = bayes_factor(bf_d0,bf_d1)
     effs  = effect_size(es_d0, es_d1)
-    
+
     # Plot
+    col_H = list(h0_dict.keys())[0]
+    col_H_lvl_h0 = h0_dict[col_H]
+    col_H_lvl_h1 = h1_dict[col_H]
     fig,axs = plt.subplots(1,3,figsize=(12,3))
-    sns.kdeplot({lvl_h1+'$_\Delta$':h1_dat,lvl_h0+'$_\Delta$':h0_dat}, fill=True, ax=axs[0])
+    sns.kdeplot({col_H_lvl_h1+'$_\Delta$':bf_d1,col_H_lvl_h0+'$_\Delta$':bf_d0}, fill=True, ax=axs[0])
     sns.despine()
     axs[0].set_title(t2+' BF$_{\mathrm{1,0}}$ = '+str(np.round(bf_df.loc['bf10',:][0],2))+', '+
                         'BF$_{\mathrm{0,1}}$ = '+str(np.round(bf_df.loc['bf01',:][0],2)),size=14)
@@ -285,16 +317,17 @@ def az_plot_contrast(idat,df,dim,lvl_h0,lvl_h1,t2,mode="global",dim_type='',subd
     axs[0].set_ylabel('density',size=14)
     
     az.plot_posterior(effs, ref_val=ref_val, rope=(hdi[0],hdi[1]),hdi_prob=0.95, ax=axs[1]);
-    axs[1].set_title(t2+' '+lvl_h1+'$_\Delta$ - '+lvl_h0+'$_\Delta$ contrast',size=14)
+    axs[1].set_title(t2+' '+col_H_lvl_h1+'$_\Delta$ - '+col_H_lvl_h0+'$_\Delta$ contrast',size=14)
     axs[1].set_xlabel(r'declined < 0 < improved'
                       '\n'
                       "effect size",size=14)
     
-    _,p05,p95,ax_ppbf = prior_prob_BF(h0_dat,h1_dat,fig=fig,ax=axs[2])
+    _,p05,p95,ax_ppbf = prior_prob_BF(bf_d0,bf_d1,fig=fig,ax=axs[2])
 
     plt.gcf().tight_layout()
     if sav_plot_q:
-        plt.savefig('bambi_'+dim+'_'+dim_type+'_'+subdim_type+'.pdf')
+        fn = "_".join([ *set( [[k,str(h0_dict[k])] for k in h0_dict.keys()][0]+[[k,str(h1_dict[k])] for k in h1_dict.keys()][0] ) ])
+        plt.savefig(fn+'.pdf')
     plt.show()
     return bf_df, effs, (p05,p95)
 # -----------------------------------------------------------------------------
@@ -616,8 +649,8 @@ def idx_from_dict(d,df):
     """
     for i,k in enumerate(d):
         if i == 0:
-            idx_bool = df[k]==d[k]
+            idx_bool = df[k].astype('str')==str(d[k])
         else:
-            idx_bool = idx_bool * (df[k]==d[k])
+            idx_bool = idx_bool * (df[k].astype('str')==str(d[k]))
     return idx_bool
 # -----------------------------------------------------------------------------
