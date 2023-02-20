@@ -160,41 +160,6 @@ def az_isel_scaled_value(idata,sel):
     return idata
 # -----------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
-# seli
-# -----------------------------------------------------------------------------
-# DESCRIPTION
-def seli(df,d):
-    """
-    replace with idx_from_dict
-    df ... dataframe
-    d ...  dict
-    """
-    if type(d) is dict:
-        s = []
-        for key in d:
-            s.append( (df[key].reset_index(drop=True)[(df[key].astype('str')==str(d[key])).values]).index.values )
-            sel = intersecti(s)
-    else:
-        print('d must be a dict!!!')
-    return sel
-# -----------------------------------------------------------------------------
-#%% ---------------------------------------------------------------------------
-# intersecti
-# -----------------------------------------------------------------------------
-# DESCRIPTION
-def intersecti(a):
-    """
-    replace with idx_from_dict
-    """
-    # all inputs must be lists in lists
-    for i,b in enumerate(a):
-        if i == 0:
-            inters = b
-        else:
-            inters = list(set(inters)&set(b))
-    return inters
-# -----------------------------------------------------------------------------
-#%% ---------------------------------------------------------------------------
 # ppc_bambi
 # -----------------------------------------------------------------------------
 # DESCRIPTION
@@ -208,7 +173,6 @@ def ppc_bambi(idata,df,var_names=[],subset=[],check_names = ['prior','posterior'
         for var in var_names:
             d[var] = list(df[var].unique())
             n_lvls.append(len(d[var]))
-        #n_vars = len(var_names)
         n_lvls = sum(n_lvls)
         if subset == []:
             n_subs = 1
@@ -216,14 +180,14 @@ def ppc_bambi(idata,df,var_names=[],subset=[],check_names = ['prior','posterior'
             subset_levels = df[subset].unique().to_list()
             n_subs = len(subset_levels)
         n_checks = len(check_names)
+
         fig,axs = plt.subplots(n_lvls*n_subs,n_checks,figsize=(6*n_checks,3*n_lvls*n_subs),sharex='col',sharey='row')
         r = 0
         show_leg = True
         for key in d:
             for item in d[key]:
                 if subset == []:
-                    #sel = (df[key].reset_index(drop=True)[(df[key]==item).values]).index.values
-                    sel = seli(df,{key:item})
+                    sel = idx_from_dict({key:item},df)
                     for c, check in enumerate(check_names):
                         print('plotting ... ax '+str(r)+','+str(c)+' - '+key+' '+str(item)+' - '+check)
                         if n_pp_samp != []:
@@ -245,10 +209,7 @@ def ppc_bambi(idata,df,var_names=[],subset=[],check_names = ['prior','posterior'
                         show_leg = False
                 else:
                     for sub in subset_levels:
-                        #kit = (df[key].reset_index(drop=True)[(df[key]==item).values]).index.values
-                        #sus = (df[key].reset_index(drop=True)[(df[subset]==sub).values]).index.values
-                        #sel = list(set(kit)&set(sus))
-                        sel = intersecti([seli(df,{key:item}),seli(df,{subset:sub})])
+                        sel = idx_from_dict({key:item,subset:sub},df)
                         for c, check in enumerate(check_names):
                             print('plotting ... ax '+str(r)+','+str(c)+' - '+key+' '+str(item)+' : '+subset+' '+str(sub)+' - '+check)
                             if n_pp_samp != []:

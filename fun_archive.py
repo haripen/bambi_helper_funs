@@ -555,3 +555,39 @@ def prior_prob_BF(idat, key, lvl_h0, lvl_h1, fig, ax, stepsize = 0.001,figsize=(
     #plt.savefig('prior_prob_BF_'+key+'.pdf')
     #plt.show()
     return bf,p05,p95,ax
+    
+#%% ---------------------------------------------------------------------------
+# seli
+# -----------------------------------------------------------------------------
+# DESCRIPTION
+def seli(df,d):
+    """
+    replace with idx_from_dict
+    df ... dataframe
+    d ...  dict
+    """
+    if type(d) is dict:
+        s = []
+        for key in d:
+            s.append( (df[key].reset_index(drop=True)[(df[key].astype('str')==str(d[key])).values]).index.values )
+            sel = intersecti(s)
+    else:
+        print('d must be a dict!!!')
+    return sel
+# -----------------------------------------------------------------------------
+#%% ---------------------------------------------------------------------------
+# intersecti
+# -----------------------------------------------------------------------------
+# DESCRIPTION
+def intersecti(a):
+    """
+    replace with idx_from_dict
+    """
+    # all inputs must be lists in lists
+    for i,b in enumerate(a):
+        if i == 0:
+            inters = b
+        else:
+            inters = list(set(inters)&set(b))
+    return inters
+# -----------------------------------------------------------------------------
