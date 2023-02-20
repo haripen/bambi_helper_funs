@@ -454,48 +454,32 @@ def prior_prob_BF(da0, da1, fig, ax, stepsize = 0.001,figsize=(4.5,4.5)):
 # DESCRIPTION
 def scaleback(t,df):
     s = df[df['test']==t].scaler.mean()
-    if t == 'VAS':
+    if t == 'HealthVAS':
         s = s/10
         unit = ' [cm]'
         t_new = 'health VAS'
-    elif t == '6minGT_2min':
+    elif t == 'WT2min':
         s = s/100
         unit = r' [$\times10^2$ m]'
         t_new = 'walk 2 min'
-    elif t == 'TUGZeit':
+    elif t == 'TUG':
         unit = ' [s]'
         t_new = 'TUG'
-    elif t == '10m':
+    elif t == 'WT10m':
         unit = ' [s]'
         t_new = 'walk 10 m'
     elif t == 'FSST':
         unit = ' [s]'
         t_new = t 
-    elif t == 'velocity':
+    elif t == 'Velocity':
         unit = r' [km/h]'
         t_new = 'gait speed'
         s=s
-    elif t == 'StepL_diff':
-        unit = r' [$\times10^1$ cm]'
-        t_new = 'step length $\Delta$'
-        s=s/10
-    elif t == 'StanceT_diff':
-        unit = r' [$\times10^{-1}$ s]'
-        t_new = 'stance time $\Delta$'
-        s=s*10
-    elif t == 'StanceT_Aside':
+    elif t == 'StanceTimeAL':
         unit = r' [$\times10^{-2}$ s]'
         t_new = 'stance time AL'
         s=s*10
-    elif t == 'StanceT_UAside':
-        unit = r' [$\times10^{-2}$ s]'
-        t_new = 'stance time UL'
-        s=s*10
-    elif t == 'StepL_Aside':
-        unit = r' [$\times10^1$ cm]'
-        t_new = 'step length AL'
-        s=s/10
-    elif t == 'StepL_UAside':
+    elif t == 'StepLengthUL':
         unit = r' [$\times10^1$ cm]'
         t_new = 'step length UL'
         s=s/10
