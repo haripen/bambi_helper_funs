@@ -287,7 +287,8 @@ def az_plot_contrast(idata,df,h0_dict,h1_dict,t2,mode=None,ref_val=0, hdi = [-0.
 
     plt.gcf().tight_layout()
     if sav_plot_q:
-        fn = "_".join([ *set( [[k,str(h0_dict[k])] for k in h0_dict.keys()][0]+[[k,str(h1_dict[k])] for k in h1_dict.keys()][0] ) ])
+    	flatten = lambda l: [item for sublist in l for item in sublist]
+        fn = "_".join([ *set( flatten([[k,str(h0_dict[k])] for k in h0_dict.keys()])+flatten([[k,str(h1_dict[k])] for k in h1_dict.keys()]) ) ])
         plt.savefig(fn+'.pdf')
     plt.show()
     return bf_df, effs, (p05,p95)
