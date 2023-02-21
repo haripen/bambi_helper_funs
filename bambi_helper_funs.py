@@ -98,7 +98,7 @@ def sel_data_from_az(idata,df,h0_dict,h1_dict=None, kind = None, mode = None, kd
         sig = list()
         for i,c in enumerate(h0_dat.chain):
             vals = h0_dat['scaled_value_sigma'].sel(chain=int(c)).values
-            sig.append(gaussian_kde(vals,kde_bw).resample(len(vals),random_seed+i)[0])
+            sig.append(gaussian_kde(vals,kde_bandwidth).resample(len(vals),random_seed+i)[0])
         h0_dat['scaled_value_sigma'].values=sig
     if kind == 'effect_size' and h1_dict != None:
         idx_bool_da0 =  idx_from_dict(h0_dict,df)
