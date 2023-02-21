@@ -400,8 +400,12 @@ def myROC(nums,cats,pos_cat=True,neg_cat=False,steps=1000):
 # DESCRIPTION
 def get_prior_probs(vals,prior_probs):
     from scipy.interpolate import CubicSpline
-    cs = CubicSpline(vals, prior_probs)
-    return [cs(0.05),cs(0.95)]
+    if sum(vals)+1==float(len(vals)):
+        lims = [0.,0.]
+    else:
+        cs = CubicSpline(vals, prior_probs)
+        lims = [cs(0.05),cs(0.95)]
+    return lims
 # -----------------------------------------------------------------------------
 
 #%% ---------------------------------------------------------------------------
