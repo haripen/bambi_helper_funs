@@ -134,6 +134,7 @@ def effect_size(h0_dat,h1_dat,sig_diff=0.05):
     n = n_h1 + n_h0
     if f_test(h0_dat['scaled_value_sigma'],h1_dat['scaled_value_sigma'])<sig_diff:
         print("Computing corrected Glass's delta")
+        sd_pooled = h0_dat['scaled_value_sigma']
     else:
         print("Computing corrected Hedge's g")
         sd_pooled = ( ( (n_h0-1)*h0_dat['scaled_value_sigma']**2 + (n_h1-1)*h1_dat['scaled_value_sigma']**2) / (n_h0+n_h1-2) )**(1/2)
@@ -361,7 +362,7 @@ def myROC(nums,cats,pos_cat=True,neg_cat=False,steps=1000):
                 - True:  Responder (or as defined in pos_cat)
                 - False: Non-Responder (or as defined in neg_cat)
                 
-    OPTIOAL
+    OPTIONAL
     ------
     pos_cat ... single str or boolian defining responder
     neg_cat ... single str or boolian defining non-responder
