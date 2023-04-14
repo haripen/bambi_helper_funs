@@ -7,32 +7,66 @@
 
 #%% FUNCTIONS TO LOAD
 #%%------------------------------------------------------------------------
-# Test Function
+# hello
+# -----------------------------------------------------------------------------
 def hello():
+    """
+    Just prints out "!!! Hello World !!!"
+    """
     print('!!! Hello World !!!')
 #--------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
 # f_test
 # -----------------------------------------------------------------------------
-# DESCRIPTION
 def f_test(a,b):
-    # idata_group is either the prior or posterior group
     import scipy.stats
     import numpy as np
-    f = np.var(a,ddof=1)/np.var(b,ddof=1) # consider returning f too
-    nun = a.size-1
-    dun = b.size-1
+    """
+    Compares the variance of two distributions (frequentist)
+
+    INPUT
+    ------
+    a ... 1d array-like, first distribution
+    b ... 1d array-like, second distribution
+
+    OUTPUT
+    ------
+    p ... float, p-value. p < threshold indicates a difference in variance
+    """
+    f = np.var(a,ddof=1)/np.var(b,ddof=1) # calculate between-sample F-value
+    nun = a.size-1 # shape parameter a
+    dun = b.size-1 # shape parameter b
     p = 1 - scipy.stats.f.cdf(f,nun, dun)
     return p
 # -----------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
 # summary_stats
 # -----------------------------------------------------------------------------
-# DESCRIPTION
 def summary_stats(bf_df,effs,bf_pri_prob,label,rope = [-0.1,0.1],esml = [0.2,0.5,0.8],hdi_prob=0.95):
     import pandas as pd
     import arviz as az
-    hdi  = az.hdi(effs, hdi_prob=hdi_prob)
+    """
+    specific helper function: merge bayes factor and effect size statistics into a table-like form, shows probability for effect sizes lying inside ROPE and effect size classes
+
+    INPUT
+    ------
+    (use az_plot_contrast to create these inputs)  
+    bf_df       ... bayes_factor output, dataframe with bayes factors, prior, probabilities, and odds
+    effs        ... effect_size output, arviz or xarray container with posterior effect size data
+    bf_pri_prob ... prior_prob_BF output (p05, p95) output as tuple, prior probability required for rejecting (5%) and accepting (95%) H1
+    label       ... sting, column name
+
+    optional
+    ------
+    rope        ... array 1x2, region of practical equivalence. default [-0.1,0.1]
+    esml        ... array 1x3, effectsize small medium large boundaries, default [0.2,0.5,0.8]
+    hdi_prob    ... float, the % of probability mass to include in the highest density interval
+
+    OUTPUT
+    ------
+    a pandas DataFrame with one column
+    """
+    hdi  = az.hdi(effs, hdi_prob=hdi_prob) # arviz highest density interval
     return pd.DataFrame(
     {
     'bf01'                : bf_df.loc['bf01',:].to_numpy(),
@@ -53,121 +87,253 @@ def summary_stats(bf_df,effs,bf_pri_prob,label,rope = [-0.1,0.1],esml = [0.2,0.5
     'bf10'                : bf_df.loc['bf10',:].to_numpy(),
     'p_pri_reject_diff'   : 100*bf_pri_prob[0],
     'p_pri_accept_diff'   : 100*bf_pri_prob[1]
-    },index=[label]).astype(float).transpose().round(2)
+    },index=[label]).astype(float).transpose()
 # -----------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
 # sort_dict_by_mean
 # -----------------------------------------------------------------------------
-# DESCRIPTION
 def sort_dict_by_mean(di):
     import numpy as np
+    """
+    sorts the keys in a dictionary by their associated value mean
+
+    INPUT
+    ------
+    di ... dictionary
+
+    OUTPUT
+    ------
+    sorted dictionary
+    """
     return {k: v for k, v in sorted(di.items(), key=lambda item: np.mean(item[1]))}
 # -----------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
 # sns_to_hex
 # -----------------------------------------------------------------------------
-# DESCRIPTION
 def sns_to_hex(sea_col):
     import numpy as np
+    """
+    converts sns.color_palette("colorblind")[0] to generally usable hex-code
+
+    INPUT
+    ------
+    sea_col ... seaborn palette color, e.g., sns.color_palette("colorblind")[0]
+
+    OUTPUT
+    ------
+    the hex-code of the input
+    """
     return '#%02x%02x%02x' % tuple([int(i) for i in (np.array(sea_col)*255).round()])
 # -----------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
 # sel_data_from_az
 # -----------------------------------------------------------------------------
-# DESCRIPTION
 def sel_data_from_az(idata,df,h0_dict,h1_dict=None, kind = None, mode = None, kde_bandwidth = 0.001, random_seed=1234):
     from scipy.stats import gaussian_kde
     import numpy as np
-    if kind == 'null' and h1_dict==None:
-        # Loop through key-item pairs and gett boolian array for selection
+    """
+    specific helper function: selects data related to H0 and H1 from arviz inference data
+
+    INPUT
+    ------
+    idata         ... arviz inference data, bambi2idata4ppc output
+    df            ... pandas dataframe used in bmb.Model
+    h0_dict       ... kind = effect_size: dict selecting H0 with arviz inference data coordinate name as key, and the specific coordinate as value, e.g.: {'coordinate name A':'coordinate A','coordinate name B':'coordinate B',...}
+    				  kind = null: pass H1 arviz inference data coordinate name and coordinate pairs, e.g., {"test":"FSST","intervention":"C","period":"1"}
+    				  kind = bayes_factor: uses mode: takes the same input as az_plot_contrast, e.g., {"dim":"lvl_h0"},{"dim":"lvl_h1"}
+
+    optional
+    ------
+    h1_dict       ... kind = effect_size: dict selecting H0 with arviz inference data coordinate name as key, and the specific coordinate as value, e.g.: {'coordinate name A':'coordinate A','coordinate name B':'coordinate B',...}
+    				  kind = null: None
+    				  kind = bayes_factor: uses mode: takes the same input as az_plot_contrast, e.g., {"dim":"lvl_h0"},{"dim":"lvl_h1"}
+    kind          ... string, effect_size, null, bayes_factor
+    mode          ... string, global, tests, ids
+    kde_bandwidth ... float, bandwidth setting for scipy.stats gaussian_kde
+    random_seed   ... int, sets the pseudo random generator to a reproducible state
+
+    OUTPUT
+    ------
+    h0_dat        ... arviz inference data for H0
+    h1_dat        ... arviz inference data for H1
+    """
+    if kind == 'null' and h1_dict==None: 
+        # based on H0 dict key-item pairs, get boolian selection index
         idx_bool_da0 =  idx_from_dict(h0_dict,df)
+        # get data based on idx_bool_da0 (this is actually H1)
         h1_dat = az_isel_scaled_value(idata,idx_bool_da0)['posterior']
+        # get data based on idx_bool_da0 (this one will be zero-centered)
         h0_dat = az_isel_scaled_value(idata,idx_bool_da0)['posterior']
 
-        # center h0_dat _mean to 0
+        # center-center h0_dat
         h0_dat['scaled_value_mean'] = h0_dat.scaled_value_mean-h0_dat.scaled_value_mean.mean()
-        # resample h0_dat distribiutions randomly
-        obs = list() 
+        # resample chain estimated mean
+        chn = list() # collect chains
         for c in h0_dat.chain:
-            mn = list()
+            obs = list() # collect observations within each chain
             for i,o in enumerate(h0_dat.scaled_value_obs):
+            	# get distribution for simulated observation and chain
                 vals = h0_dat['scaled_value_mean'].sel(scaled_value_obs=int(o),chain=int(c)).values
-                mn.append(gaussian_kde(vals,kde_bandwidth).resample(len(vals),random_seed+i)[0])
-            obs.append(mn)
-        h0_dat['scaled_value_mean'].values = np.swapaxes(obs,1,2) 
-        sig = list()
+                # fit kde, re-sample with updated random_seed, add to list
+                obs.append(gaussian_kde(vals,kde_bandwidth).resample(len(vals),random_seed+i)[0])
+            # add re-sampled observations to the chain to update
+            chn.append(obs)
+        # re-order chain dimensions and update the original
+        h0_dat['scaled_value_mean'].values = np.swapaxes(chn,1,2) 
+        # resample chain estimated sigma
+        chn = list() # collect chains
         for i,c in enumerate(h0_dat.chain):
+        	# get all values for the chain
             vals = h0_dat['scaled_value_sigma'].sel(chain=int(c)).values
-            sig.append(gaussian_kde(vals,kde_bandwidth).resample(len(vals),random_seed+i)[0])
-        h0_dat['scaled_value_sigma'].values=sig
+            # fit kde, re-sample with updated random_seed, add to list
+            chn.append(gaussian_kde(vals,kde_bandwidth).resample(len(vals),random_seed+i)[0])
+        # update the original
+        h0_dat['scaled_value_sigma'].values=chn
+        
     if kind == 'effect_size' and h1_dict != None:
+    	# based on H0 dict key-item pair(s), get boolian selection index
         idx_bool_da0 =  idx_from_dict(h0_dict,df)
+        # based on H1 dict key-item pair(s=, get boolian selection index
         idx_bool_da1 =  idx_from_dict(h1_dict,df)
+        # get data (mean, sigma will be used) based on idx_bool_da0
         h0_dat = az_isel_scaled_value(idata,idx_bool_da0)['posterior']
+        # get data (mean, sigma will be used) based on idx_bool_da1
         h1_dat = az_isel_scaled_value(idata,idx_bool_da1)['posterior']
         
     if kind == "bayes_factor":
         if mode == "global":
-            col_H = list(h0_dict.keys())[0]
-            col_H_lvl_h0 = h0_dict[col_H]
-            col_H_lvl_h1 = h1_dict[col_H]
-            h0_dat = (idata.posterior.stack(draws=("chain", "draw"))[col_H]).sel({col_H+'_dim':col_H_lvl_h0})
-            h1_dat = (idata.posterior.stack(draws=("chain", "draw"))[col_H]).sel({col_H+'_dim':col_H_lvl_h1})        
+        	# one-dimensional selection from the posterior data
+            col_H = list(h0_dict.keys())[0] # get the two identical keys, discard the second
+            col_H_lvl_h0 = h0_dict[col_H] # get the "value" of the 1st key, i.e., dimension A
+            col_H_lvl_h1 = h1_dict[col_H] # get the "value" of the 2nd key, i.e., dimension B
+            h0_dat = (idata.posterior.stack(draws=("chain", "draw"))[col_H]).sel({col_H+'_dim':col_H_lvl_h0}) # combine chains and draws, take a data variable, and subset it by the H0 dimension
+            h1_dat = (idata.posterior.stack(draws=("chain", "draw"))[col_H]).sel({col_H+'_dim':col_H_lvl_h1}) # combine chains and draws, take a data variable, and subset it by the H1 dimension 
         elif mode == "ids" or mode == "tests":
-            col_H = list(h0_dict.keys())[0]
-            col_A = list(h0_dict.keys())[1]
-            col_A_lvl =    h0_dict[col_A]
-            col_H_lvl_h0 = h0_dict[col_H]
-            col_H_lvl_h1 = h1_dict[col_H]
-            h0_dat = (idata.posterior.stack(draws=("chain", "draw"))[col_A+':'+col_H]).sel({col_A+':'+col_H+'_dim':col_A_lvl+', '+col_H_lvl_h0})
-            h1_dat = (idata.posterior.stack(draws=("chain", "draw"))[col_A+':'+col_H]).sel({col_A+':'+col_H+'_dim':col_A_lvl+', '+col_H_lvl_h1})
+        	# two-dimensional selection  from the posterior data
+            col_H = list(h0_dict.keys())[0] # get the two keys, take the first
+            col_A = list(h0_dict.keys())[1] # get the two keys, take the second
+            col_A_lvl =    h0_dict[col_A] # get the "value" of the 2nd key, i.e., the level (e.g., test)
+            col_H_lvl_h0 = h0_dict[col_H] # get the "value" of the 1st key, i.e., dimension H0
+            col_H_lvl_h1 = h1_dict[col_H] # get the "value" of the 1st key, i.e., dimension H1
+            h0_dat = (idata.posterior.stack(draws=("chain", "draw"))[col_A+':'+col_H]).sel({col_A+':'+col_H+'_dim':col_A_lvl+', '+col_H_lvl_h0}) # combine chains and draws, take a data variable, and subset it by the H0 dimension
+            h1_dat = (idata.posterior.stack(draws=("chain", "draw"))[col_A+':'+col_H]).sel({col_A+':'+col_H+'_dim':col_A_lvl+', '+col_H_lvl_h1}) # combine chains and draws, take a data variable, and subset it by the H1 dimension
             
     return h0_dat, h1_dat
 # -----------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
 # az_effect_size
 # -----------------------------------------------------------------------------
-# DESCRIPTION
 def effect_size(h0_dat,h1_dat,sig_diff=0.05):
-    n_h0 = h0_dat['scaled_value_sigma'].size
-    n_h1 = h1_dat['scaled_value_sigma'].size
-    n = n_h1 + n_h0
+    """
+    effect size of H1 - H0, calculates hedge's g or glass delta if the groups' variance differs
+
+    INPUT
+    ------
+    h0_dat   ... arviz inference data, output of sel_data_from_az for H0
+    h1_dat   ... arviz inference data, output of sel_data_from_az for H0
+
+    optional
+    ------
+    sig_diff ... float, frequentist p-value threshold for F-test testing variance difference, default 0.05
+
+    OUTPUT
+    ------
+    arviz inference data of effect size for difference of H1 - H0
+    """
+    n_h0 = h0_dat['scaled_value_sigma'].size # sample size of H0
+    n_h1 = h1_dat['scaled_value_sigma'].size # sample size of H1
+    n = n_h1 + n_h0 # total sample size
+    
     if f_test(h0_dat['scaled_value_sigma'],h1_dat['scaled_value_sigma'])<sig_diff:
+    	# Glass delta uses only the standard deviation of H0 data
         print("Computing corrected Glass's delta")
         sd_pooled = h0_dat['scaled_value_sigma']
     else:
+    	# Hedges g uses the pooled standard deviation of H0 and H1 data
         print("Computing corrected Hedge's g")
         sd_pooled = ( ( (n_h0-1)*h0_dat['scaled_value_sigma']**2 + (n_h1-1)*h1_dat['scaled_value_sigma']**2) / (n_h0+n_h1-2) )**(1/2)
+    # calculate the difference of the means
     diff_of_means = h1_dat['scaled_value_mean'].mean(axis=2).values-h0_dat['scaled_value_mean'].mean(axis=2).values
+    # caclulate cohen's d and apply Hedges correction for small sample sizes (the correction will be one with bayesian posterior data)
     return (diff_of_means/sd_pooled) * ((n-3)/(n-2.25))*((n-2)/n)**(1/2)
 # -----------------------------------------------------------------------------
 
 #%% ---------------------------------------------------------------------------
 # bambi2idata4ppc
 # -----------------------------------------------------------------------------
-# DESCRIPTION
 def bambi2idata4ppc(model,result,draws=6000,random_seed = 1234):
-    model.predict(result, inplace=True, kind="mean")
-    idata = model.predict(result, inplace=False, kind="pps")
-    idata.extend( model.prior_predictive(draws=draws,random_seed=random_seed) )
+    """
+    add predicted posterior distribution of the mean, posterior predictive, and prior predictive distribution
+
+    INPUT
+    ------
+    model       ... BAMBI model
+    result      ... fitted BAMBI model results
+
+    optional
+    ------
+    draws       ... int, number of prior predictive samples simulated, default: 6000
+    random_seed ... int, pseudo random generator setting for reproducibility, default: 1234
+
+    OUTPUT
+    ------
+    idata       ... arviz inference data with predictions
+    """
+    model.predict(result, inplace=True, kind="mean") # draws from the posterior distribution of the mean (mean and sigma)
+    idata = model.predict(result, inplace=False, kind="pps") # draws from the posterior predictive distribution
+    idata.extend( model.prior_predictive(draws=draws,random_seed=random_seed) ) # prior predictive
     return idata
 # -----------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
 # az_isel_scaled_value
 # -----------------------------------------------------------------------------
-# DESCRIPTION
 def az_isel_scaled_value(idata,sel):
+    """
+    subset arviz inference data using an index array
+
+    INPUT
+    ------
+    idata ... arviz inference data
+    sel   ... array, index
+
+    OUTPUT
+    ------
+    idata ... subset of arviz inference data
+    """
+    # use isel method on XXX_obs, XXX_dim_0, ..., where XXX is the dependent variable, e.g., scaled_value
     idata = idata.isel(scaled_value_obs=sel).isel(scaled_value_dim_0=sel)
     return idata
 # -----------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
 # ppc_bambi
 # -----------------------------------------------------------------------------
-# DESCRIPTION
 # could remove subset option using new intersecti fun 
 def ppc_bambi(idata,df,var_names=[],subset=[],check_names = ['prior','posterior'],n_pp_samp=[],colors=['#5AA36A','k','orange'], kind='cumulative',random_seed = 1234):
     import matplotlib.pyplot as plt
     import arviz as az
+    """
+    specific plot organization function, plot prior and posterior predictive checks next to each other
+
+    INPUT
+    ------
+    idata      ... arviz inference data, e.g., the output of bambi2idata4ppc
+    df         ... pandas dataframe, the df used when fitting the BAMBI model
+
+    optional
+    ------
+    var_names   ... list of strings, i.e., a fixed effect with all levels plotted as a row
+    subset      ... string, i.e., additional condition with levels plotted side-by-side
+    check_names ... list of strings, define the label of the prior and posterior data
+    n_pp_samp   ... int, number of samples to plot; passing [] will plot all
+    colors      ... list of strings, define 3 colors: prior predictive, observed, prior predictive mean
+    kind        ... string, passed to az.plot_ppc either kde or cumulative
+    random_seed ... int, pseudo random generator setting for reproducibility, default: 1234
+
+    OUTPUT
+    ------
+    fig ... plt figure handle
+    axs ... plt axis handle
+    """
     if len(var_names)>0:
         d = dict()
         n_lvls = list()
@@ -251,18 +417,42 @@ def ppc_bambi(idata,df,var_names=[],subset=[],check_names = ['prior','posterior'
 #%% ---------------------------------------------------------------------------
 # az_plot_contrast
 # -----------------------------------------------------------------------------
-# DESCRIPTION
-def az_plot_contrast(idata,df,h0_dict,h1_dict,t2,mode=None,ref_val=0, hdi = [-0.1,0.1],sav_plot_q=True):    
+def az_plot_contrast(idata,df,h0_dict,h1_dict,t2,mode=None,ref_val=0, rope = [-0.1,0.1],sav_plot_q=True):    
     import seaborn as sns
     import matplotlib.pyplot as plt
     import numpy as np
     import arviz as az
     """
+    plot H0, H1 distributions, their difference, and prior probability required for accepting a difference between the distributions
+
+    INPUT
+    ------
+    idata      ... arviz inference data, e.g., the output of bambi2idata4ppc
+    df         ... pandas dataframe, the df used when fitting the BAMBI model
+    h0_dict    ... dict, key-value pairs for selecting H0 data, e.g., {'intervention':lvl_h0,'test':dim}
+    h1_dict    ... dict, key-value pairs for selecting H1 data, e.g., {'intervention':lvl_h1,'test':dim}
+    t2         ... string, title or name of the parameter shown on the plot
+
+    optional
+    ------
+    mode       ... string, global, tests, ids
+    ref_val    ... float, reference value passed to az.plot_posterior
+    rope       ... iterable length 2, lower and upper boundary of region of practical equivalence
+    sav_plot_q ... bool, set to False to not save the plot as PDF
+
+    OUTPUT
+    ------
+    bf_df      ... dataframe, Bayes factors output from bayes_factor()
+    effs       ... xarray.DataArray, effect size distribution, the output of effect_size()
+    (p05,p95)  ... tuple with floats, the prior probability s.t. posterior belief < 0.05 and < 0.95 for accepting a difference in the distributions
     """
-    bf_d0, bf_d1 = sel_data_from_az(idata,df,h0_dict,h1_dict,kind="bayes_factor",mode=mode)
-    es_d0, es_d1 = sel_data_from_az(idata,df,h0_dict,h1_dict,kind="effect_size")
-    bf_df = bayes_factor(bf_d0,bf_d1)
-    effs  = effect_size(es_d0, es_d1)
+    # get data
+    bf_d0, bf_d1 = sel_data_from_az(idata,df,h0_dict,h1_dict,kind="bayes_factor",mode=mode) # for Bayes factor
+    es_d0, es_d1 = sel_data_from_az(idata,df,h0_dict,h1_dict,kind="effect_size") # for effect size
+    
+    # calculate
+    bf_df = bayes_factor(bf_d0,bf_d1) # Bayes factors
+    effs  = effect_size(es_d0, es_d1) # effect size
 
     # Plot
     col_H = list(h0_dict.keys())[0]
@@ -278,15 +468,17 @@ def az_plot_contrast(idata,df,h0_dict,h1_dict,t2,mode=None,ref_val=0, hdi = [-0.
                       "scaled value",size=14)
     axs[0].set_ylabel('density',size=14)
     
-    az.plot_posterior(effs, ref_val=ref_val, rope=(hdi[0],hdi[1]),hdi_prob=0.95, ax=axs[1]);
+    az.plot_posterior(effs, ref_val=ref_val, rope=(rope[0],rope[1]),hdi_prob=0.95, ax=axs[1]);
     axs[1].set_title(t2+' '+col_H_lvl_h1+'$_\Delta$ - '+col_H_lvl_h0+'$_\Delta$ contrast',size=14)
     axs[1].set_xlabel(r'declined < 0 < improved'
                       '\n'
                       "effect size",size=14)
     
+    # calculate prior probability for accepting a difference between distributions, get its plot/axis
     _,p05,p95,ax_ppbf = prior_prob_BF(bf_d0,bf_d1,fig=fig,ax=axs[2])
-
     plt.gcf().tight_layout()
+    
+    # option to save plot
     if sav_plot_q:
         flatten = lambda l: [item for sublist in l for item in sublist]
         fn = "_".join([ *set( flatten([[k,str(h0_dict[k])] for k in h0_dict.keys()])+flatten([[k,str(h1_dict[k])] for k in h1_dict.keys()]) ) ])
@@ -302,8 +494,23 @@ def bayes_factor(da0, da1, prior_sim=0.5, prior_diff=0.5, kde_bandwidth = 0.001)
     from scipy.stats import gaussian_kde #norm
     import pandas as pd
     """
-    """
+    calculate Bayes factor for difference between two distributions
     
+    INPUT
+    ------
+    da0           ... arviz inference data, posterior distribution for H0
+    da1           ... arviz inference data, posterior distribution for H1
+
+    optional
+    ------
+    prior_sim     ... float, prior probability favouring similarity between distributions (prior_sim + prior_diff != 1)
+    prior_diff    ... float, prior probability favouring difference between distributions (prior_sim + prior_diff != 1)
+    kde_bandwidth ... float, bandwidth setting for scipy.stats gaussian_kde
+
+    OUTPUT
+    ------
+    dataframe with one column of prior probability, probabilities, odds, and Bayes factors
+    """
     # Compute the mean and standard deviation of the two input DataArrays
     mean0 = da0.mean().values
     #std1 = da0.std().values
@@ -335,6 +542,7 @@ def bayes_factor(da0, da1, prior_sim=0.5, prior_diff=0.5, kde_bandwidth = 0.001)
     # Compute the Bayes factor for difference
     BF_sim  = 1/BF_diff
     
+    # Organize the output 
     d = {'pH1':prior_diff,
          'pH0':prior_sim,
          'pH1gD':p_diff,
@@ -362,7 +570,7 @@ def myROC(nums,cats,pos_cat=True,neg_cat=False,steps=1000):
                 - True:  Responder (or as defined in pos_cat)
                 - False: Non-Responder (or as defined in neg_cat)
                 
-    OPTIONAL
+    optional
     ------
     pos_cat ... single str or boolian defining responder
     neg_cat ... single str or boolian defining non-responder
@@ -398,31 +606,65 @@ def myROC(nums,cats,pos_cat=True,neg_cat=False,steps=1000):
 #%% ---------------------------------------------------------------------------
 # get_prior_probs
 # -----------------------------------------------------------------------------
-# DESCRIPTION
 def get_prior_probs(vals,prior_probs):
     from scipy.interpolate import CubicSpline
+    """
+    function used by prior_prob_BF to estimate 0.05 and 0.95 probability thresholds
+    
+    INPUT
+    ------
+    vals        ... list of floats, y-axis, each the first cell of the df output of bayes_factor(), i.e., the posterior probability for accepting a difference between distributions
+    prior_probs ... list of floats, x-axis, i.e., the prior probability for accepting a difference between distributions
+    
+    OUTPUT
+    ------
+    lims        ... list, length 2, prior probability s.t. posterior < 0.05 and < 0.95, resp.
+    """
     if sum(vals)+1==float(len(vals)):
-        lims = [0.,0.]
+        lims = [0.,0.] # if all posterior probabilities equal 1, set prior probability to 0 at both thresholds
     else:
-        cs = CubicSpline(vals, prior_probs)
-        lims = [cs(0.05),cs(0.95)]
+        cs = CubicSpline(vals, prior_probs) # fit data with cubic splines
+        lims = [cs(0.05),cs(0.95)] # evaluate fit at threshold level
     return lims
 # -----------------------------------------------------------------------------
 
 #%% ---------------------------------------------------------------------------
 # prior_prob_BF
 # -----------------------------------------------------------------------------
-# DESCRIPTION
 def prior_prob_BF(da0, da1, fig, ax, stepsize = 0.001,figsize=(4.5,4.5)):
     import matplotlib.pyplot as plt
     import seaborn as sns
     import numpy as np
-    p_pris = np.arange(10**(-16),1+stepsize,stepsize)
-    vals = [0]
+    """
+    calculate prior probabilities for accepting difference between distributions
+    
+    INPUT
+    ------
+    da0      ... arviz inference data, posterior distribution for H0
+    da1      ... arviz inference data, posterior distribution for H1
+    fig      ... figure handle passed by az_plot_contrast()
+    ax       ... axis handle passed by az_plot_contrast()
+    
+    optional
+    ------
+    stepsize ... float, step-size of the x-axis, i.e., prior probabilities, default 0.001
+    figsize  ... tuple, length 2, sets figsize parameter, default (4.5,4.5)
+    
+    OUTPUT
+    ------
+    bf       ... dataframe, with Bayes factors, the output of bayes_factor()
+    p05      ... float, prior probability s.t. posterior < 0.05
+    p95      ... float, prior probability s.t. posterior < 0.95
+    ax       ... axis handle
+    """
+    p_pris = np.arange(10**(-16),1+stepsize,stepsize) # set array of prior probability values, cant begin at zero becaus we'd have a 1/0 situation
+    vals = [0] # initial posterior probability value at min(p_pris) set to zero
     for p_pri in p_pris:
+    	# calculate posterior probability for each prior probability
         vals.append(bayes_factor(da0, da1, prior_sim=1-p_pri, prior_diff=p_pri).loc['pH1gD',:].to_list()[0])
-    p_pris = np.insert(p_pris,0,0)
-    bf = bayes_factor(da0, da1, prior_sim=0.5, prior_diff=0.5).loc['bf10',:].to_list()[0]
+    p_pris = np.insert(p_pris,0,0) # add a zero to the beginning of p_pris
+    bf = bayes_factor(da0, da1, prior_sim=0.5, prior_diff=0.5).loc['bf10',:].to_list()[0] # calculate the regular Bayes factor for the plot
+    # some corrections the cubic spline fit returned values greater or smaller than 0 and 1
     p05,p95 = get_prior_probs(vals,p_pris)
     if (p95 > 1):
         p95 = 1.0
@@ -432,6 +674,7 @@ def prior_prob_BF(da0, da1, fig, ax, stepsize = 0.001,figsize=(4.5,4.5)):
         p05 = 1.0
     elif (p05 < 0):
         p05 = 0.0
+    # Plot (some local figure save functionality not yet removed)
     #fig,ax = plt.subplots(1,1,figsize=figsize)
     ax.plot(p_pris,vals,zorder=100,linewidth=3,alpha=0.8)
     ax.plot((p05,p95),(0.05,0.95),'X', markersize=10)
@@ -453,12 +696,24 @@ def prior_prob_BF(da0, da1, fig, ax, stepsize = 0.001,figsize=(4.5,4.5)):
     #plt.show()
     return bf,p05,p95,ax
 # -----------------------------------------------------------------------------
-# -----------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
 # scaleback
 # -----------------------------------------------------------------------------
-# DESCRIPTION
 def scaleback(t,df):
+    """
+    specific helper function: get scale value, unit, updated variable name for plots
+    
+    INPUT
+    ------
+    t     ... string, variable name
+    df    ... dataframe with the data used in the BAMBI model
+    
+    OUTPUT
+    ------
+    s     ... float, scale value
+    unit  ... string, unit
+    t_new ... string, updated variable name
+    """
     s = df[df['test']==t].scaler.mean()
     if t == 'HealthVAS':
         s = s/10
@@ -491,15 +746,21 @@ def scaleback(t,df):
         s=s/10
     return s,unit,t_new
 # -----------------------------------------------------------------------------
-# -----------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
 # idx_from_dict
 # -----------------------------------------------------------------------------
-# DESCRIPTION
 def idx_from_dict(d,df):
     """
-    d ... dict, each key corresponds to a df column and each value to a cell entry of that column
-    returns combined matches as boolian array
+    create boolian selection array from dict and dataframe
+    
+    INPUT
+    ------
+    d        ... dict, each key corresponds to a df column and each value to a cell entry of that column
+    df       ... dataframe, the boolian index based on the dict
+
+    OUTPUT
+    ------
+    idx_bool ... combined matches as boolian array
     """
     for i,k in enumerate(d):
         if i == 0:
