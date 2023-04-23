@@ -744,6 +744,10 @@ def scaleback(t,df):
         unit = r' [$\times10^1$ cm]'
         t_new = 'step length UL'
         s=s/10
+    elif t == 'StepLengthDiff':
+        unit = r' [$\times10^2$ cm]'
+        t_new = 'step length diff'
+        s=s/100
     return s,unit,t_new
 # -----------------------------------------------------------------------------
 #%% ---------------------------------------------------------------------------
